@@ -8,7 +8,7 @@ async function performBraveSearch(query, numResults = 5) {
       `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${numResults}`,
       {
         headers: {
-          "X-Subscription-Token": "BSAVQ9yd2CJJ7q0Dq9cCoYIb4c6gzI9",
+          "X-Subscription-Token": process.env.BRAVE_SEARCH_API_KEY,
           Accept: "application/json",
         },
       },
@@ -171,7 +171,7 @@ function needsWebSearch(message) {
   ]
 
   const lowerMessage = message.toLowerCase()
-  return searchIndicators.some((indicator) => lowerMessage.includes(indicator)) || lowerMessage.includes("?")
+  return searchIndicators.some((indicator) => lowerMessage.includes(indicator))
 }
 
 export async function POST(req) {
@@ -441,12 +441,10 @@ ${searchResults.error || "Please try again later."}`
             },
           })
         }
-      }
-    }
-
-    // Create focus-specific system prompts for non-search responses
-    const focusPrompts = {
-      general: `You are Aly AI, a helpful assistant. Provide comprehensive and accurate responses to user queries.
+      } else {
+        // Directly use DeepSeek/OpenRouter for up-to-date/general queries
+        const focusPrompts = {
+          general: `You are Aly AI, a helpful assistant. Provide comprehensive and accurate responses to user queries.
 
 IMPORTANT FORMATTING RULES:
 - DO NOT use markdown formatting like ###, **, ####, ---, ===, or similar symbols
@@ -459,7 +457,7 @@ IMPORTANT FORMATTING RULES:
 - Add blank lines between major sections for better visual separation
 - Structure your response with clear paragraph breaks and proper spacing`,
 
-      contentWriting: `You are Aly AI in Content Writing mode. Excel at creating high-quality written content including blogs, articles, emails, marketing copy, and creative writing. Pay attention to tone, structure, audience, and purpose. Provide detailed, well-crafted content.
+          contentWriting: `You are Aly AI in Content Writing mode. Excel at creating high-quality written content including blogs, articles, emails, marketing copy, and creative writing. Pay attention to tone, structure, audience, and purpose. Provide detailed, well-crafted content.
 
 IMPORTANT FORMATTING RULES:
 - DO NOT use markdown formatting like ###, **, ####, ---, ===, or similar symbols
@@ -472,7 +470,7 @@ IMPORTANT FORMATTING RULES:
 - Add blank lines between major sections for better visual separation
 - Structure your response with clear paragraph breaks and proper spacing`,
 
-      coding: `You are Aly AI in Coding mode. Specialize in programming tasks including code generation, debugging, optimization, and explanation. Provide clean, well-documented, efficient code solutions with explanations. Support multiple programming languages and frameworks.
+          coding: `You are Aly AI in Coding mode. Specialize in programming tasks including code generation, debugging, optimization, and explanation. Provide clean, well-documented, efficient code solutions with explanations. Support multiple programming languages and frameworks.
 
 IMPORTANT FORMATTING RULES:
 - DO NOT use markdown formatting like ###, **, ####, ---, ===, or similar symbols
@@ -485,7 +483,7 @@ IMPORTANT FORMATTING RULES:
 - Add blank lines between major sections for better visual separation
 - Structure your response with clear paragraph breaks and proper spacing`,
 
-      reasoning: `You are Aly AI in Reasoning mode. Focus on structured problem-solving and analytical thinking. Break down complex problems systematically, provide step-by-step solutions, analyze pros and cons, and use logical reasoning approaches.
+          reasoning: `You are Aly AI in Reasoning mode. Focus on structured problem-solving and analytical thinking. Break down complex problems systematically, provide step-by-step solutions, analyze pros and cons, and use logical reasoning approaches.
 
 IMPORTANT FORMATTING RULES:
 - DO NOT use markdown formatting like ###, **, ####, ---, ===, or similar symbols
@@ -498,7 +496,7 @@ IMPORTANT FORMATTING RULES:
 - Add blank lines between major sections for better visual separation
 - Structure your response with clear paragraph breaks and proper spacing`,
 
-      webSearch: `You are Aly AI in Web Search mode. Provide comprehensive responses and suggest when current information might be helpful.
+          webSearch: `You are Aly AI in Web Search mode. Provide comprehensive responses and suggest when current information might be helpful.
 
 IMPORTANT FORMATTING RULES:
 - DO NOT use markdown formatting like ###, **, ####, ---, ===, or similar symbols
@@ -510,82 +508,84 @@ IMPORTANT FORMATTING RULES:
 - Break up long content into digestible paragraphs
 - Add blank lines between major sections for better visual separation
 - Structure your response with clear paragraph breaks and proper spacing`,
-    }
-
-    const systemMessage = {
-      role: "system",
-      content: focusPrompts[focusMode] || focusPrompts.general,
-    }
-
-    // Prepare messages with system prompt
-    const messagesWithSystem = [systemMessage, ...messages]
-
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000",
-        "X-Title": "DeepSeek Chat App",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: messagesWithSystem,
-        stream: true,
-        temperature: 0.7,
-        max_tokens: 4000,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.text()
-      console.error("OpenRouter API error:", errorData)
-      return new Response(
-        JSON.stringify({
-          error: "Failed to get response from OpenRouter",
-          details: errorData,
-          status: response.status,
-        }),
-        {
-          status: response.status,
-          headers: { "Content-Type": "application/json" },
-        },
-      )
-    }
-
-    // Create a transform stream to extract only content
-    const encoder = new TextEncoder()
-    const decoder = new TextDecoder()
-
-    const transformStream = new TransformStream({
-      transform(chunk, controller) {
-        const text = decoder.decode(chunk)
-        const lines = text.split("\n")
-
-        for (const line of lines) {
-          if (line.startsWith("data: ") && line !== "data: [DONE]") {
-            try {
-              const data = JSON.parse(line.slice(6))
-              const content = data.choices?.[0]?.delta?.content
-              if (content) {
-                controller.enqueue(encoder.encode(content))
-              }
-            } catch (e) {
-              // Skip invalid JSON lines
-              console.warn("Failed to parse streaming data:", line)
-            }
-          }
         }
-      },
-    })
 
-    return new Response(response.body?.pipeThrough(transformStream), {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    })
+        const systemMessage = {
+          role: "system",
+          content: focusPrompts[focusMode] || focusPrompts.general,
+        }
+
+        // Prepare messages with system prompt
+        const messagesWithSystem = [systemMessage, ...messages]
+
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://localhost:3000",
+            "X-Title": "DeepSeek Chat App",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: messagesWithSystem,
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 4000,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.text()
+          console.error("OpenRouter API error:", errorData)
+          return new Response(
+            JSON.stringify({
+              error: "Failed to get response from OpenRouter",
+              details: errorData,
+              status: response.status,
+            }),
+            {
+              status: response.status,
+              headers: { "Content-Type": "application/json" },
+            },
+          )
+        }
+
+        // Create a transform stream to extract only content
+        const encoder = new TextEncoder()
+        const decoder = new TextDecoder()
+
+        const transformStream = new TransformStream({
+          transform(chunk, controller) {
+            const text = decoder.decode(chunk)
+            const lines = text.split("\n")
+
+            for (const line of lines) {
+              if (line.startsWith("data: ") && line !== "data: [DONE]") {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  const content = data.choices?.[0]?.delta?.content
+                  if (content) {
+                    controller.enqueue(encoder.encode(content))
+                  }
+                } catch (e) {
+                  // Skip invalid JSON lines
+                  console.warn("Failed to parse streaming data:", line)
+                }
+              }
+            }
+          },
+        })
+
+        return new Response(response.body?.pipeThrough(transformStream), {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        })
+      }
+    }
   } catch (error) {
     console.error("Chat API error:", error)
     return new Response(

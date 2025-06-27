@@ -1,6 +1,6 @@
 "use client"
 import { useChat } from "@ai-sdk/react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -107,6 +107,8 @@ export default function DeepSeekChat() {
   const [isClient, setIsClient] = useState(false)
   const [activeTools, setActiveTools] = useState([])
   const [focusMode, setFocusMode] = useState("general")
+  const [isWebSearch, setIsWebSearch] = useState(false)
+  const prevMessagesLength = useRef(0)
 
   // Load saved settings from localStorage on component mount
   useEffect(() => {
@@ -174,6 +176,22 @@ export default function DeepSeekChat() {
         return <MessageCircle className="w-5 h-5" />
     }
   }
+
+  // Detect if the latest user message needs web search
+  useEffect(() => {
+    if (messages.length > prevMessagesLength.current) {
+      const lastMessage = messages[messages.length - 1]
+      if (lastMessage && lastMessage.role === "user") {
+        const searchIndicators = [
+          "latest", "recent", "current", "today", "news", "what's happening", "search for", "find", "look up", "when did", "what happened", "price of", "stock", "weather", "events", "trending", "update", "now", "this week", "this month", "2024", "2025", "examples of", "best practices", "how to", "tutorial", "guide", "documentation", "compare", "vs", "versus", "difference between", "pros and cons"
+        ]
+        const lowerMessage = lastMessage.content.toLowerCase()
+        const needsSearch = searchIndicators.some((indicator) => lowerMessage.includes(indicator))
+        setIsWebSearch(needsSearch)
+      }
+    }
+    prevMessagesLength.current = messages.length
+  }, [messages])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
@@ -247,7 +265,7 @@ export default function DeepSeekChat() {
         </Collapsible>
 
         {/* Chat Interface */}
-        <Card className="h-[750px] flex flex-col shadow-lg border-0 bg-white/80 backdrop-blur-sm pt-0 pb-3">
+        <Card className="h-[700px] flex flex-col shadow-lg border-0 bg-white/80 backdrop-blur-sm pt-0 pb-3">
           <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-lg px-3 py-4">
             <CardTitle className="flex items-center gap-2">
               {getModeIcon(focusMode)}
@@ -426,7 +444,11 @@ export default function DeepSeekChat() {
                 >
                   <div className="flex items-center gap-2">
                     <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                    <span className="text-sm">Optimizing query → Searching → Analyzing...</span>
+                    <span className="text-sm">
+                      {isWebSearch
+                        ? "Optimizing query → Searching → Analyzing..."
+                        : "Analyzing with DeepSeek AI..."}
+                    </span>
                   </div>
                 </div>
               </div>
